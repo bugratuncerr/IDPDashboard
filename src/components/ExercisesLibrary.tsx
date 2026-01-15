@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, X, Search, Edit2, Trash2, Upload, Check, Image as ImageIcon } from 'lucide-react';
+import { Plus, X, Search, Edit2, Trash2, Upload, Check, Image as ImageIcon, FileText, Video as VideoIcon, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
 // --- Types ---
@@ -16,11 +16,20 @@ interface Exercise {
   linkedBasics: string[];
   linkedPrinciples: string[];
   linkedTactics: string[];
-  mediaUrl?: string;
+  mediaUrl?: string; // Base64 string
   isCustom: boolean;
 }
 
 interface SelectorItem { id: string; name: string; }
+
+// Helper to determine media type from Base64 string
+const getMediaType = (url?: string) => {
+    if (!url) return null;
+    if (url.startsWith('data:image')) return 'image';
+    if (url.startsWith('data:video')) return 'video';
+    if (url.startsWith('data:application/pdf')) return 'pdf';
+    return 'unknown';
+};
 
 const mockExercises: Exercise[] = [
   {
@@ -229,9 +238,15 @@ export default function ExercisesLibrary() {
     setFormData({ ...formData, [field]: newList });
   };
 
+  // Updated File Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Size check (e.g. 10MB limit)
+      if (file.size > 100 * 1024 * 1024) {
+          return toast.error("File too large. Max 100MB");
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => setMediaPreview(reader.result as string);
       reader.readAsDataURL(file);
@@ -241,6 +256,21 @@ export default function ExercisesLibrary() {
   const filteredExercises = exercises.filter(ex => 
     ex.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Helper to render media preview
+  const renderMedia = (url: string) => {
+      const type = getMediaType(url);
+      if (type === 'image') return <img src={url} alt="Preview" className="w-full h-full object-cover rounded-lg" />;
+      if (type === 'video') return <video src={url} controls className="w-full h-full rounded-lg bg-black" />;
+      if (type === 'pdf') return (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 bg-[#151922] rounded-lg border border-slate-700">
+              <FileText size={48} className="mb-2" />
+              <span className="text-sm">PDF Document Attached</span>
+              <a href={url} download="exercise.pdf" className="mt-2 text-blue-500 text-xs hover:underline">Download to View</a>
+          </div>
+      );
+      return <div className="flex items-center justify-center h-full text-slate-500">Unsupported Media</div>;
+  };
 
   return (
     <div className="p-8">
@@ -266,7 +296,17 @@ export default function ExercisesLibrary() {
                 <h3 className="font-bold text-lg dark:text-slate-100 group-hover:text-blue-400 transition-colors">{ex.name}</h3>
                 <span className={`px-2.5 py-1 rounded text-xs font-medium border border-[#3b3226] bg-[#2a2218] text-amber-500`}>{ex.intensity}</span>
             </div>
-            <p className="text-sm text-gray-500 dark:text-slate-400 line-clamp-3 mb-5 leading-relaxed">{ex.description}</p>
+            
+            {/* Thumbnail Preview */}
+            <div className="h-32 mb-4 bg-[#151922] rounded-lg overflow-hidden flex items-center justify-center border border-slate-700/50">
+                {ex.mediaUrl ? (
+                    getMediaType(ex.mediaUrl) === 'image' ? <img src={ex.mediaUrl} className="w-full h-full object-cover opacity-80" /> :
+                    getMediaType(ex.mediaUrl) === 'video' ? <VideoIcon size={32} className="text-slate-500"/> :
+                    <FileText size={32} className="text-slate-500"/>
+                ) : <ImageIcon size={24} className="text-slate-600 opacity-50"/>}
+            </div>
+
+            <p className="text-sm text-gray-500 dark:text-slate-400 line-clamp-2 mb-5 leading-relaxed">{ex.description}</p>
             <div className="flex flex-wrap gap-2 mt-auto">
                 {ex.equipment.slice(0,3).map((e, i) => <span key={i} className="text-[11px] bg-[#151922] text-slate-400 px-2.5 py-1.5 rounded border border-slate-700/50">{e}</span>)}
                 {ex.equipment.length > 3 && <span className="text-[11px] text-slate-500 pt-1">+{ex.equipment.length - 3}</span>}
@@ -275,37 +315,22 @@ export default function ExercisesLibrary() {
         ))}
       </div>
 
-      {/* DETAIL MODAL (Matching Figma Style) */}
+      {/* DETAIL MODAL */}
       {selectedExercise && !showCreateModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-8" onClick={closeModal}>
           <div className="bg-[#1e2330] rounded-xl max-w-4xl w-full p-8 max-h-[90vh] overflow-y-auto shadow-2xl relative border border-slate-700" onClick={e => e.stopPropagation()}>
             <button onClick={closeModal} className="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors z-10"><X size={24} /></button>
             
-            {/* Header with Edit/Delete Icons next to Title */}
             <div className="mb-6">
                 <div className="flex items-center gap-3 mb-3">
                     <h2 className="text-3xl font-bold text-white">{selectedExercise.name}</h2>
                     {selectedExercise.isCustom && (
                         <div className="flex gap-2 ml-2">
-                            {/* UPDATED: Buttons now slate-500 by default, colored on hover */}
-                            <button 
-                                onClick={() => openEditModal(selectedExercise)} 
-                                className="p-1.5 text-slate-500 hover:text-blue-500 hover:bg-blue-500/10 rounded transition-colors"
-                                title="Edit"
-                            >
-                                <Edit2 size={20} />
-                            </button>
-                            <button 
-                                onClick={() => handleDeleteExercise(selectedExercise.id)} 
-                                className="p-1.5 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                                title="Delete"
-                            >
-                                <Trash2 size={20} />
-                            </button>
+                            <button onClick={() => openEditModal(selectedExercise)} className="p-1.5 text-slate-500 hover:text-blue-500 hover:bg-blue-500/10 rounded transition-colors"><Edit2 size={20} /></button>
+                            <button onClick={() => handleDeleteExercise(selectedExercise.id)} className="p-1.5 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"><Trash2 size={20} /></button>
                         </div>
                     )}
                 </div>
-                {/* Badges */}
                 <div className="flex gap-3">
                     <span className="px-3 py-1 bg-[#2a2218] border border-[#3b3226] text-amber-500 text-sm rounded font-medium">{selectedExercise.intensity} Intensity</span>
                     <span className="px-3 py-1 bg-[#151922] border border-slate-700 text-slate-300 text-sm rounded font-medium">{selectedExercise.goalkeepers} Goalkeepers</span>
@@ -313,6 +338,13 @@ export default function ExercisesLibrary() {
             </div>
 
             <div className="space-y-6">
+                {/* Media Player Section */}
+                {selectedExercise.mediaUrl && (
+                    <div className="w-full h-80 bg-black rounded-xl overflow-hidden border border-slate-700">
+                        {renderMedia(selectedExercise.mediaUrl)}
+                    </div>
+                )}
+
                 {[
                     { label: 'DESCRIPTION', value: selectedExercise.description },
                     { label: 'SETUP', value: selectedExercise.setup },
@@ -326,7 +358,6 @@ export default function ExercisesLibrary() {
                     </div>
                 ))}
 
-                {/* Related Items */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
                     {[
                         { label: 'RELATED BASICS', items: selectedExercise.linkedBasics },
@@ -337,7 +368,7 @@ export default function ExercisesLibrary() {
                             <h4 className="text-xs uppercase tracking-widest font-bold text-slate-500 mb-2">{section.label}</h4>
                             <div className="flex flex-wrap gap-2">
                                 {section.items.length > 0 ? section.items.map(item => (
-                                    <span key={item} className="px-3 py-1.5 bg-[#151922] border border-slate-700 text-slate-300 text-xs rounded hover:border-slate-500 transition-colors cursor-default">
+                                    <span key={item} className="px-3 py-1.5 bg-[#151922] border border-slate-700 text-slate-300 text-xs rounded">
                                         {item}
                                     </span>
                                 )) : <span className="text-xs text-slate-600 italic">None selected</span>}
@@ -345,26 +376,6 @@ export default function ExercisesLibrary() {
                         </div>
                     ))}
                 </div>
-
-                {selectedExercise.equipment.length > 0 && (
-                    <div className="pt-2">
-                        <h4 className="text-xs uppercase tracking-widest font-bold text-slate-500 mb-2">EQUIPMENT</h4>
-                        <div className="flex flex-wrap gap-2">
-                            {selectedExercise.equipment.map(e => (
-                                <span key={e} className="px-3 py-1.5 bg-[#151922] border border-slate-700 text-slate-400 text-xs rounded">
-                                    {e}
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {selectedExercise.mediaUrl && (
-                    <div className="pt-2">
-                        <h4 className="text-xs uppercase tracking-widest font-bold text-slate-500 mb-2">MEDIA</h4>
-                        <img src={selectedExercise.mediaUrl} alt="Exercise Media" className="rounded-lg max-h-64 object-cover border border-slate-700" />
-                    </div>
-                )}
             </div>
           </div>
         </div>
@@ -386,6 +397,28 @@ export default function ExercisesLibrary() {
                         value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. Rondo 4v2" />
                 </div>
 
+                {/* Media Upload with Preview */}
+                <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-2 uppercase">Media (Image, Video, PDF)</label>
+                    <div className="flex gap-4 items-start">
+                        <label className="flex items-center gap-2 px-4 py-3 bg-[#151922] border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800 cursor-pointer transition-colors border-dashed border-2">
+                            <Upload size={18} /> Upload File
+                            <input type="file" className="hidden" accept="image/*,video/*,application/pdf" onChange={handleFileUpload} />
+                        </label>
+                        {mediaPreview && (
+                            <div className="h-24 w-32 bg-black rounded-lg overflow-hidden border border-slate-700 relative group">
+                                {getMediaType(mediaPreview) === 'image' && <img src={mediaPreview} className="w-full h-full object-cover" />}
+                                {getMediaType(mediaPreview) === 'video' && <div className="flex items-center justify-center h-full"><Play size={24}/></div>}
+                                {getMediaType(mediaPreview) === 'pdf' && <div className="flex items-center justify-center h-full"><FileText size={24}/></div>}
+                                <button onClick={() => setMediaPreview(null)} className="absolute top-1 right-1 bg-red-500/80 p-1 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Rest of the form fields... */}
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Intensity</label>
@@ -427,7 +460,7 @@ export default function ExercisesLibrary() {
                     </div>
                 </div>
 
-                {/* Related Items Selection */}
+                {/* Selectors for Basics, Principles, Tactics (Keep existing logic) */}
                 <div className="space-y-4 pt-2">
                     {[
                         { label: 'Related Basics', list: allBasics, field: 'linkedBasics' as const, search: basicsSearch, setSearch: setBasicsSearch },
@@ -461,17 +494,6 @@ export default function ExercisesLibrary() {
                             </div>
                         </div>
                     ))}
-                </div>
-
-                <div className="pt-2">
-                    <label className="block text-xs font-medium text-slate-400 mb-2 uppercase">Media</label>
-                    <div className="flex items-center gap-3">
-                        <label className="flex items-center gap-2 px-4 py-2 bg-[#151922] border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800 cursor-pointer transition-colors">
-                            <Upload size={16} /> Upload
-                            <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
-                        </label>
-                        {mediaPreview && <span className="text-xs text-green-400 flex items-center gap-1"><Image as ImageIcon size={12}/> Selected</span>}
-                    </div>
                 </div>
             </div>
 

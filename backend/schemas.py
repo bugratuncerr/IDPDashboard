@@ -14,15 +14,22 @@ class Team(TeamCreate):
         orm_mode = True
 
 class PlayerCreate(BaseModel):
-    name: str
-    jersey_number: int
+    first_name: str
+    last_name: str
+    date_of_birth: str
     position: str
+    jersey_number: int
     status: str
-    age: int = 0
+    player_phone: Optional[str] = ""
+    image_url: Optional[str] = ""
     height: int = 0
     weight: int = 0
-    preferred_foot: str = "Right"
-    team_id: Optional[str] = None
+    mother_name: Optional[str] = ""
+    mother_phone: Optional[str] = ""
+    father_name: Optional[str] = ""
+    father_phone: Optional[str] = ""
+    attendance: int = 0
+    performance: int = 0
 
 class Player(PlayerCreate):
     id: str
@@ -105,3 +112,5 @@ class TrainingSession(TrainingSessionCreate):
     id: str
     class Config:
         orm_mode = True
+
+

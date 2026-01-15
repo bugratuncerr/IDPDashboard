@@ -17,16 +17,31 @@ class Team(Base):
 class Player(Base):
     __tablename__ = "players"
     id = Column(String, primary_key=True, default=generate_uuid)
-    team_id = Column(String, ForeignKey("teams.id"), nullable=True)
-    name = Column(String)
-    jersey_number = Column(Integer)
+    first_name = Column(String)
+    last_name = Column(String)
+    date_of_birth = Column(String) # YYYY-MM-DD
     position = Column(String) 
-    status = Column(String)   
-    age = Column(Integer)
-    height = Column(Integer)
-    weight = Column(Integer)
-    preferred_foot = Column(String)
-
+    jersey_number = Column(Integer)
+    status = Column(String, default="Active")
+    
+    # Contact & Personal
+    player_phone = Column(String, nullable=True)
+    image_url = Column(String, nullable=True) # Base64 string for simplicity
+    
+    # Physical
+    height = Column(Integer, default=0) # cm
+    weight = Column(Integer, default=0) # kg
+    
+    # Parents
+    mother_name = Column(String, nullable=True)
+    mother_phone = Column(String, nullable=True)
+    father_name = Column(String, nullable=True)
+    father_phone = Column(String, nullable=True)
+    
+    # Stats (Simplified for now)
+    attendance = Column(Integer, default=0)
+    performance = Column(Integer, default=0)
+    
 # --- 2. LIBRARIES ---
 class Basic(Base):
     __tablename__ = "basics"

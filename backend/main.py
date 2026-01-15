@@ -48,7 +48,8 @@ def update_exercise(exercise_id: str, item: schemas.ExerciseCreate, db: Session 
     db_ex.linked_basics = item.linked_basics
     db_ex.linked_principles = item.linked_principles
     db_ex.linked_tactics = item.linked_tactics
-    
+    db_ex.media_url = item.media_url  # <--- ENSURE THIS LINE EXISTS
+
     db.commit()
     db.refresh(db_ex)
     return db_ex
@@ -263,6 +264,9 @@ def delete_session(id: str, db: Session = Depends(database.get_db)):
 #    PLAYERS (Helper)
 # ==========================
 # We need this to populate the "Available Players" list in the Training Modal
+# ==========================
+#    PLAYERS
+# ==========================
 @app.get("/players")
 def get_players(db: Session = Depends(database.get_db)):
     return db.query(models.Player).all()
@@ -274,3 +278,23 @@ def create_player(item: schemas.PlayerCreate, db: Session = Depends(database.get
     db.commit()
     db.refresh(db_item)
     return db_item
+
+@app.put("/players/{id}")
+def update_player(id: str, item: schemas.PlayerCreate, db: Session = Depends(database.get_db)):
+    db_item = db.query(models.Player).filter(models.Player.id == id).first()
+    if not db_item: raise HTTPException(status_code=404)
+    
+    for key, value in item.dict().items():
+        setattr(db_item, key, value)
+    
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+@app.delete("/players/{id}")
+def delete_player(id: str, db: Session = Depends(database.get_db)):
+    db_item = db.query(models.Player).filter(models.Player.id == id).first()
+    if not db_item: raise HTTPException(status_code=404)
+    db.delete(db_item)
+    db.commit()
+    return {"message": "Deleted"}
