@@ -4,3 +4,6 @@ FIXED_SONNER_IMPORT.md
 FIXED_TAILWIND_CSS.md
 Attributions.md
 node_modules/
+venv/
+backend/__pycache__
+football.db

@@ -1,608 +1,393 @@
 import { useState, useEffect } from 'react';
-import { Plus, X, Search, Calendar, Clock, Users, Target, Zap, Trash2, Edit2, GripVertical } from 'lucide-react';
-import { useDrag, useDrop } from 'react-dnd';
+import { Plus, X, Calendar, Clock, Trash2, Edit2, User, Activity } from 'lucide-react';
 import { toast } from 'sonner';
+
+// --- Interfaces ---
+interface Player {
+  id: string;
+  name: string;
+}
 
 interface Exercise {
   id: string;
   name: string;
-  intensity: string;
 }
 
-interface Player {
-  id: string;
-  firstName: string;
-  lastName: string;
-}
-
-interface Training {
+interface TrainingSession {
   id: string;
   date: string;
   startTime: string;
   endTime: string;
   focus: string;
-  intensity: 'Low' | 'Medium' | 'High';
-  availablePlayers: string[];
-  absentPlayers: string[];
-  exercises: string[]; // Exercise IDs in order
-  isCustom: boolean;
-}
-
-interface DraggableExerciseProps {
-  exercise: Exercise;
-  index: number;
-  moveExercise: (dragIndex: number, hoverIndex: number) => void;
-  onRemove: () => void;
-}
-
-function DraggableExercise({ exercise, index, moveExercise, onRemove }: DraggableExerciseProps) {
-  const [{ isDragging }, drag] = useDrag({
-    type: 'exercise',
-    item: { index },
-    collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
-    }),
-  });
-
-  const [, drop] = useDrop({
-    accept: 'exercise',
-    hover: (item: { index: number }) => {
-      if (item.index !== index) {
-        moveExercise(item.index, index);
-        item.index = index;
-      }
-    },
-  });
-
-  return (
-    <div
-      ref={(node) => drag(drop(node))}
-      className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex items-center gap-3 ${
-        isDragging ? 'opacity-50' : ''
-      }`}
-    >
-      <GripVertical className="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-move" />
-      <div className="flex-1">
-        <p className="text-gray-900 dark:text-gray-100">{exercise.name}</p>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Intensity: {exercise.intensity}</p>
-      </div>
-      <button
-        onClick={onRemove}
-        className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
-    </div>
-  );
+  intensity: string;
+  selectedPlayers: string[]; // List of IDs
+  selectedExercises: string[]; // List of IDs
 }
 
 export default function TrainingManager() {
-  const [trainings, setTrainings] = useState<Training[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [sessions, setSessions] = useState<TrainingSession[]>([]);
+  const [allPlayers, setAllPlayers] = useState<Player[]>([]);
+  const [allExercises, setAllExercises] = useState<Exercise[]>([]);
+  
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedTraining, setSelectedTraining] = useState<Training | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Form state
-  const [formData, setFormData] = useState<Partial<Training>>({
+  // Form State
+  const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     startTime: '09:00',
     endTime: '11:00',
     focus: '',
     intensity: 'Medium',
-    availablePlayers: [],
-    absentPlayers: [],
-    exercises: []
+    selectedPlayerIds: [] as string[],
+    selectedExerciseIds: [] as string[]
   });
 
-  // Mock data - in real app, load from API/localStorage
-  const mockExercises: Exercise[] = [
-    { id: 'ex1', name: 'Rondo 4v2', intensity: 'Medium' },
-    { id: 'ex2', name: 'Finishing in the Box', intensity: 'High' },
-    { id: 'ex3', name: 'Passing Patterns', intensity: 'Low' }
-  ];
-
-  const mockPlayers: Player[] = [
-    { id: 'p1', firstName: 'John', lastName: 'Smith' },
-    { id: 'p2', firstName: 'Michael', lastName: 'Johnson' },
-    { id: 'p3', firstName: 'David', lastName: 'Williams' },
-    { id: 'p4', firstName: 'James', lastName: 'Brown' }
-  ];
-
-  // Load trainings from localStorage
+  // --- 1. LOAD DATA ---
   useEffect(() => {
-    const saved = localStorage.getItem('trainings');
-    if (saved) {
-      setTrainings(JSON.parse(saved));
-    }
+    const fetchData = async () => {
+        try {
+            // Fetch Sessions
+            const sRes = await fetch('http://127.0.0.1:8000/training_sessions');
+            if (sRes.ok) {
+                const data = await sRes.json();
+                setSessions(data.map((s: any) => ({
+                    id: s.id,
+                    date: s.date,
+                    startTime: s.start_time,
+                    endTime: s.end_time,
+                    focus: s.focus,
+                    intensity: s.intensity,
+                    selectedPlayers: s.selected_players ? s.selected_players.split(',') : [],
+                    selectedExercises: s.selected_exercises ? s.selected_exercises.split(',') : []
+                })));
+            }
+
+            // Fetch Players (for selection list)
+            const pRes = await fetch('http://127.0.0.1:8000/players');
+            if (pRes.ok) setAllPlayers(await pRes.json());
+
+            // Fetch Exercises (for selection list)
+            const eRes = await fetch('http://127.0.0.1:8000/exercises');
+            if (eRes.ok) setAllExercises(await eRes.json());
+
+        } catch (e) {
+            toast.error("Failed to load data");
+        }
+    };
+    fetchData();
   }, []);
 
-  // Save trainings to localStorage
+  // Set default players when opening create modal
   useEffect(() => {
-    localStorage.setItem('trainings', JSON.stringify(trainings));
-  }, [trainings]);
+      if (showCreateModal && !isEditing && allPlayers.length > 0) {
+          setFormData(prev => ({ ...prev, selectedPlayerIds: allPlayers.map(p => p.id) }));
+      }
+  }, [showCreateModal, isEditing, allPlayers]);
 
-  const filteredTrainings = trainings.filter(training =>
-    training.focus.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    training.date.includes(searchQuery)
-  );
+  // --- 2. ACTIONS ---
+  const handleSave = async () => {
+    if (!formData.focus) return toast.error("Focus is required");
 
-  const handleCreateTraining = () => {
-    if (!formData.date || !formData.startTime || !formData.endTime || !formData.focus) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    const newTraining: Training = {
-      id: `training-${Date.now()}`,
-      date: formData.date!,
-      startTime: formData.startTime!,
-      endTime: formData.endTime!,
-      focus: formData.focus!,
-      intensity: formData.intensity || 'Medium',
-      availablePlayers: formData.availablePlayers || [],
-      absentPlayers: formData.absentPlayers || [],
-      exercises: formData.exercises || [],
-      isCustom: true
+    const payload = {
+        date: formData.date,
+        start_time: formData.startTime,
+        end_time: formData.endTime,
+        focus: formData.focus,
+        intensity: formData.intensity,
+        selected_players: formData.selectedPlayerIds.join(','),
+        selected_exercises: formData.selectedExerciseIds.join(',')
     };
 
-    setTrainings([...trainings, newTraining]);
-    toast.success('Training session created successfully!');
-    resetForm();
-  };
+    try {
+        let res;
+        if (isEditing && editingId) {
+            res = await fetch(`http://127.0.0.1:8000/training_sessions/${editingId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            res = await fetch('http://127.0.0.1:8000/training_sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        }
 
-  const handleEditTraining = () => {
-    if (!formData.date || !formData.startTime || !formData.endTime || !formData.focus || !selectedTraining) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
+        if (res.ok) {
+            const saved = await res.json();
+            const newItem = {
+                id: saved.id,
+                date: saved.date,
+                startTime: saved.start_time,
+                endTime: saved.end_time,
+                focus: saved.focus,
+                intensity: saved.intensity,
+                selectedPlayers: saved.selected_players ? saved.selected_players.split(',') : [],
+                selectedExercises: saved.selected_exercises ? saved.selected_exercises.split(',') : []
+            };
 
-    const updatedTraining: Training = {
-      ...selectedTraining,
-      date: formData.date!,
-      startTime: formData.startTime!,
-      endTime: formData.endTime!,
-      focus: formData.focus!,
-      intensity: formData.intensity || 'Medium',
-      availablePlayers: formData.availablePlayers || [],
-      absentPlayers: formData.absentPlayers || [],
-      exercises: formData.exercises || []
-    };
-
-    setTrainings(trainings.map(t => t.id === selectedTraining.id ? updatedTraining : t));
-    setSelectedTraining(updatedTraining);
-    toast.success('Training session updated successfully!');
-    setIsEditing(false);
-  };
-
-  const handleDeleteTraining = (id: string) => {
-    setTrainings(trainings.filter(t => t.id !== id));
-    setSelectedTraining(null);
-    toast.success('Training session deleted successfully!');
-  };
-
-  const resetForm = () => {
-    setFormData({
-      date: new Date().toISOString().split('T')[0],
-      startTime: '09:00',
-      endTime: '11:00',
-      focus: '',
-      intensity: 'Medium',
-      availablePlayers: [],
-      absentPlayers: [],
-      exercises: []
-    });
-    setShowCreateModal(false);
-  };
-
-  const startEditing = (training: Training) => {
-    setFormData({
-      date: training.date,
-      startTime: training.startTime,
-      endTime: training.endTime,
-      focus: training.focus,
-      intensity: training.intensity,
-      availablePlayers: training.availablePlayers,
-      absentPlayers: training.absentPlayers,
-      exercises: training.exercises
-    });
-    setIsEditing(true);
-  };
-
-  const togglePlayer = (playerId: string, list: 'available' | 'absent') => {
-    if (list === 'available') {
-      const current = formData.availablePlayers || [];
-      if (current.includes(playerId)) {
-        setFormData({ ...formData, availablePlayers: current.filter(id => id !== playerId) });
-      } else {
-        // Remove from absent if adding to available
-        const absent = (formData.absentPlayers || []).filter(id => id !== playerId);
-        setFormData({ ...formData, availablePlayers: [...current, playerId], absentPlayers: absent });
-      }
-    } else {
-      const current = formData.absentPlayers || [];
-      if (current.includes(playerId)) {
-        setFormData({ ...formData, absentPlayers: current.filter(id => id !== playerId) });
-      } else {
-        // Remove from available if adding to absent
-        const available = (formData.availablePlayers || []).filter(id => id !== playerId);
-        setFormData({ ...formData, absentPlayers: [...current, playerId], availablePlayers: available });
-      }
+            if (isEditing) {
+                setSessions(prev => prev.map(s => s.id === newItem.id ? newItem : s));
+                toast.success("Session Updated");
+            } else {
+                setSessions(prev => [...prev, newItem]);
+                toast.success("Session Created");
+            }
+            closeModal();
+        }
+    } catch {
+        toast.error("Save failed");
     }
   };
 
-  const addExercise = (exerciseId: string) => {
-    const current = formData.exercises || [];
-    if (!current.includes(exerciseId)) {
-      setFormData({ ...formData, exercises: [...current, exerciseId] });
-    }
+  const handleDelete = async (id: string) => {
+      await fetch(`http://127.0.0.1:8000/training_sessions/${id}`, { method: 'DELETE' });
+      setSessions(prev => prev.filter(s => s.id !== id));
+      toast.success("Deleted");
   };
 
-  const removeExercise = (index: number) => {
-    const current = formData.exercises || [];
-    setFormData({ ...formData, exercises: current.filter((_, i) => i !== index) });
+  // --- 3. UI HELPERS ---
+  const openCreate = () => {
+      setIsEditing(false);
+      setEditingId(null);
+      setFormData({
+        date: new Date().toISOString().split('T')[0],
+        startTime: '09:00',
+        endTime: '11:00',
+        focus: '',
+        intensity: 'Medium',
+        selectedPlayerIds: allPlayers.map(p => p.id),
+        selectedExerciseIds: []
+      });
+      setShowCreateModal(true);
   };
 
-  const moveExercise = (dragIndex: number, hoverIndex: number) => {
-    const current = [...(formData.exercises || [])];
-    const [removed] = current.splice(dragIndex, 1);
-    current.splice(hoverIndex, 0, removed);
-    setFormData({ ...formData, exercises: current });
+  const openEdit = (s: TrainingSession) => {
+      setIsEditing(true);
+      setEditingId(s.id);
+      setFormData({
+        date: s.date,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        focus: s.focus,
+        intensity: s.intensity,
+        selectedPlayerIds: s.selectedPlayers,
+        selectedExerciseIds: s.selectedExercises
+      });
+      setShowCreateModal(true);
   };
 
-  const getIntensityColor = (intensity: string) => {
-    switch (intensity) {
-      case 'Low': return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300';
-      case 'Medium': return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300';
-      case 'High': return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
-      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300';
-    }
+  const closeModal = () => setShowCreateModal(false);
+
+  const togglePlayer = (id: string) => {
+      setFormData(prev => {
+          const exists = prev.selectedPlayerIds.includes(id);
+          return {
+              ...prev,
+              selectedPlayerIds: exists 
+                ? prev.selectedPlayerIds.filter(pid => pid !== id)
+                : [...prev.selectedPlayerIds, id]
+          };
+      });
+  };
+
+  const toggleExercise = (id: string) => {
+      setFormData(prev => {
+          const exists = prev.selectedExerciseIds.includes(id);
+          return {
+              ...prev,
+              selectedExerciseIds: exists 
+                ? prev.selectedExerciseIds.filter(eid => eid !== id)
+                : [...prev.selectedExerciseIds, id]
+          };
+      });
   };
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl text-gray-900 dark:text-gray-100 mb-2">Training Sessions</h1>
-          <p className="text-gray-600 dark:text-gray-400">Plan and manage training sessions</p>
+          <h1 className="text-3xl font-bold dark:text-white">Training Sessions</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Plan and manage team training</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Create Training
+        <button onClick={openCreate} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex gap-2 items-center shadow-lg transition-colors">
+          <Plus size={18} /> Create Training
         </button>
       </div>
 
-      {/* Search */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6">
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 dark:text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search training sessions..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </div>
-
-      {/* Training List */}
       <div className="space-y-4">
-        {filteredTrainings.map((training) => (
-          <button
-            key={training.id}
-            onClick={() => setSelectedTraining(training)}
-            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer text-left"
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-lg text-gray-900 dark:text-gray-100">{training.focus}</h3>
-                  <span className={`px-2 py-1 rounded text-xs ${getIntensityColor(training.intensity)}`}>
-                    {training.intensity}
-                  </span>
+        {sessions.map(s => (
+            <div key={s.id} className="bg-white dark:bg-[#1e2330] border border-gray-200 dark:border-slate-800 rounded-xl p-6 flex justify-between items-center shadow-sm hover:shadow-lg transition-all group">
+                <div>
+                    <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-lg font-bold dark:text-white">{s.focus}</h3>
+                        <span className="text-xs px-2.5 py-1 rounded bg-[#252a3a] border border-[#303649] text-blue-300 font-medium">
+                            {s.intensity}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-6 text-sm text-gray-500 dark:text-slate-400">
+                        <span className="flex items-center gap-2"><Calendar size={15} className="text-slate-500"/> {s.date}</span>
+                        <span className="flex items-center gap-2"><Clock size={15} className="text-slate-500"/> {s.startTime} - {s.endTime}</span>
+                        <span className="flex items-center gap-2"><Activity size={15} className="text-slate-500"/> {s.selectedExercises.length} Exercises</span>
+                        <span className="flex items-center gap-2"><User size={15} className="text-slate-500"/> {s.selectedPlayers.length} Players</span>
+                    </div>
                 </div>
-                <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-                  <div className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    {new Date(training.date).toLocaleDateString()}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" />
-                    {training.startTime} - {training.endTime}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Users className="w-4 h-4" />
-                    {training.availablePlayers.length} players
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Target className="w-4 h-4" />
-                    {training.exercises.length} exercises
-                  </div>
+                
+                {/* Action Buttons - Simple Icons */}
+                <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 px-2">
+                    <button 
+                        onClick={() => openEdit(s)} 
+                        className="text-slate-500 hover:text-blue-500 transition-colors" 
+                        title="Edit"
+                    >
+                        <Edit2 size={18}/>
+                    </button>
+                    <button 
+                        onClick={() => handleDelete(s.id)} 
+                        className="text-slate-500 hover:text-red-500 transition-colors" 
+                        title="Delete"
+                    >
+                        <Trash2 size={18}/>
+                    </button>
                 </div>
-              </div>
             </div>
-          </button>
         ))}
-
-        {filteredTrainings.length === 0 && (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
-            <Calendar className="w-12 h-12 text-gray-400 dark:text-gray-500 mx-auto mb-3" />
-            <p className="text-gray-600 dark:text-gray-400">No training sessions found</p>
-          </div>
-        )}
+        {sessions.length === 0 && <div className="text-center py-10 text-slate-500">No training sessions scheduled.</div>}
       </div>
 
-      {/* Detail Modal */}
-      {selectedTraining && !isEditing && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-8">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl text-gray-900 dark:text-gray-100">{selectedTraining.focus}</h2>
-              <div className="flex items-center gap-2">
-                {selectedTraining.isCustom && (
-                  <>
-                    <button
-                      onClick={() => startEditing(selectedTraining)}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteTraining(selectedTraining.id)}
-                      className="px-3 py-1 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Delete
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => setSelectedTraining(null)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5 dark:text-gray-300" />
-                </button>
-              </div>
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={closeModal}>
+          <div className="bg-[#1e2330] rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 text-white border border-slate-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+            
+            <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+                <h2 className="text-xl font-bold">{isEditing ? 'Edit Training Session' : 'Create New Training Session'}</h2>
+                <button onClick={closeModal}><X className="text-slate-400 hover:text-white transition-colors"/></button>
             </div>
 
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+            {/* Date & Time Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div>
-                  <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Date</h4>
-                  <p className="text-gray-900 dark:text-gray-100">{new Date(selectedTraining.date).toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Time</h4>
-                  <p className="text-gray-900 dark:text-gray-100">{selectedTraining.startTime} - {selectedTraining.endTime}</p>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Date *</label>
+                    <input type="date" className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none transition-colors text-slate-200"
+                        value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
                 </div>
                 <div>
-                  <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Intensity</h4>
-                  <span className={`inline-block px-3 py-1 rounded text-sm ${getIntensityColor(selectedTraining.intensity)}`}>
-                    {selectedTraining.intensity}
-                  </span>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Start Time *</label>
+                    <input type="time" className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none transition-colors text-slate-200"
+                        value={formData.startTime} onChange={e => setFormData({...formData, startTime: e.target.value})} />
                 </div>
                 <div>
-                  <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Available Players</h4>
-                  <p className="text-gray-900 dark:text-gray-100">{selectedTraining.availablePlayers.length} players</p>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">End Time *</label>
+                    <input type="time" className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none transition-colors text-slate-200"
+                        value={formData.endTime} onChange={e => setFormData({...formData, endTime: e.target.value})} />
                 </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Exercises ({selectedTraining.exercises.length})</h4>
-                <div className="space-y-2">
-                  {selectedTraining.exercises.map((exId, idx) => {
-                    const exercise = mockExercises.find(ex => ex.id === exId);
-                    return exercise ? (
-                      <div key={idx} className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-500 dark:text-gray-400 text-sm">{idx + 1}.</span>
-                          <p className="text-gray-900 dark:text-gray-100">{exercise.name}</p>
-                        </div>
-                      </div>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create/Edit Modal */}
-      {(showCreateModal || isEditing) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-8">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl text-gray-900 dark:text-gray-100">
-                {isEditing ? 'Edit Training Session' : 'Create New Training Session'}
-              </h2>
-              <button
-                onClick={() => {
-                  if (isEditing) {
-                    setIsEditing(false);
-                  } else {
-                    resetForm();
-                  }
-                }}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 dark:text-gray-300" />
-              </button>
             </div>
 
-            <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); isEditing ? handleEditTraining() : handleCreateTraining(); }}>
-              <div className="grid grid-cols-3 gap-4">
+            {/* Focus & Intensity */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Date *</label>
-                  <input
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Focus *</label>
+                    <input className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none transition-colors text-slate-200 placeholder-slate-600"
+                        placeholder="e.g., Possession and Build-up Play" value={formData.focus} onChange={e => setFormData({...formData, focus: e.target.value})} />
                 </div>
-
                 <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Start Time *</label>
-                  <input
-                    type="time"
-                    value={formData.startTime}
-                    onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Intensity *</label>
+                    <select className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none transition-colors text-slate-200"
+                        value={formData.intensity} onChange={e => setFormData({...formData, intensity: e.target.value})}>
+                        <option>Low</option><option>Medium</option><option>High</option>
+                    </select>
                 </div>
+            </div>
 
+            {/* Players Selection */}
+            <div className="mb-6 space-y-4">
+                {/* Available / Present */}
                 <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">End Time *</label>
-                  <input
-                    type="time"
-                    value={formData.endTime}
-                    onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Focus *</label>
-                  <input
-                    type="text"
-                    value={formData.focus}
-                    onChange={(e) => setFormData({ ...formData, focus: e.target.value })}
-                    placeholder="e.g., Possession and Build-up Play"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Intensity *</label>
-                  <select
-                    value={formData.intensity}
-                    onChange={(e) => setFormData({ ...formData, intensity: e.target.value as 'Low' | 'Medium' | 'High' })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Available Players</label>
-                <div className="flex flex-wrap gap-2">
-                  {mockPlayers.map((player) => (
-                    <button
-                      key={player.id}
-                      type="button"
-                      onClick={() => togglePlayer(player.id, 'available')}
-                      className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                        formData.availablePlayers?.includes(player.id)
-                          ? 'bg-green-600 text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {player.firstName} {player.lastName}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Absent Players</label>
-                <div className="flex flex-wrap gap-2">
-                  {mockPlayers.map((player) => (
-                    <button
-                      key={player.id}
-                      type="button"
-                      onClick={() => togglePlayer(player.id, 'absent')}
-                      className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                        formData.absentPlayers?.includes(player.id)
-                          ? 'bg-red-600 text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {player.firstName} {player.lastName}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Exercises (Drag to reorder)</label>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Available Exercises</p>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {mockExercises.map((exercise) => (
-                        <button
-                          key={exercise.id}
-                          type="button"
-                          onClick={() => addExercise(exercise.id)}
-                          disabled={formData.exercises?.includes(exercise.id)}
-                          className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                            formData.exercises?.includes(exercise.id)
-                              ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-                              : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 hover:border-blue-300 dark:hover:border-blue-600'
-                          }`}
-                        >
-                          {exercise.name}
-                        </button>
-                      ))}
+                    <label className="block text-xs font-medium text-slate-400 mb-2 uppercase">Available Players</label>
+                    <div className="flex flex-wrap gap-2">
+                        {formData.selectedPlayerIds.map(id => {
+                            const p = allPlayers.find(pl => pl.id === id);
+                            return p ? (
+                                <button key={id} onClick={() => togglePlayer(id)} 
+                                    className="px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-xs text-white border border-slate-600 transition-colors">
+                                    {p.name}
+                                </button>
+                            ) : null;
+                        })}
+                        {formData.selectedPlayerIds.length === 0 && <span className="text-xs text-slate-500 italic">No players selected</span>}
                     </div>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Selected Exercises ({formData.exercises?.length || 0})</p>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {(formData.exercises || []).map((exId, index) => {
-                        const exercise = mockExercises.find(ex => ex.id === exId);
-                        return exercise ? (
-                          <DraggableExercise
-                            key={`${exId}-${index}`}
-                            exercise={exercise}
-                            index={index}
-                            moveExercise={moveExercise}
-                            onRemove={() => removeExercise(index)}
-                          />
-                        ) : null;
-                      })}
-                      {(!formData.exercises || formData.exercises.length === 0) && (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No exercises selected</p>
-                      )}
-                    </div>
-                  </div>
                 </div>
-              </div>
+                
+                {/* Absent */}
+                <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-2 uppercase">Absent Players</label>
+                    <div className="flex flex-wrap gap-2">
+                        {allPlayers.filter(p => !formData.selectedPlayerIds.includes(p.id)).map(p => (
+                            <button key={p.id} onClick={() => togglePlayer(p.id)} 
+                                className="px-3 py-1.5 rounded bg-[#151922] hover:bg-slate-800 text-xs text-slate-500 border border-slate-700 transition-colors">
+                                {p.name}
+                            </button>
+                        ))}
+                        {allPlayers.length > 0 && allPlayers.filter(p => !formData.selectedPlayerIds.includes(p.id)).length === 0 && (
+                            <span className="text-xs text-slate-500 italic">All players available</span>
+                        )}
+                    </div>
+                </div>
+            </div>
 
-              <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isEditing) {
-                      setIsEditing(false);
-                    } else {
-                      resetForm();
-                    }
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Cancel
+            {/* Exercise Selection */}
+            <div className="grid grid-cols-2 gap-6 mb-2">
+                {/* Available Exercises */}
+                <div className="flex flex-col h-64">
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Available Exercises</label>
+                    <div className="bg-[#151922] border border-slate-700 rounded-lg p-2 flex-1 overflow-y-auto space-y-1 custom-scrollbar">
+                        {allExercises.filter(ex => !formData.selectedExerciseIds.includes(ex.id)).map(ex => (
+                            <div key={ex.id} onClick={() => toggleExercise(ex.id)}
+                                className="p-2.5 rounded bg-slate-800/40 hover:bg-slate-700 cursor-pointer text-sm flex justify-between items-center group transition-colors border border-transparent hover:border-slate-600">
+                                <span className="text-slate-300">{ex.name}</span>
+                                <Plus size={14} className="text-slate-500 group-hover:text-blue-400"/>
+                            </div>
+                        ))}
+                        {allExercises.length === 0 && <p className="text-xs text-slate-500 p-2">No exercises created yet.</p>}
+                    </div>
+                </div>
+
+                {/* Selected Exercises */}
+                <div className="flex flex-col h-64">
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Selected Exercises ({formData.selectedExerciseIds.length})</label>
+                    <div className="bg-[#151922] border border-slate-700 rounded-lg p-2 flex-1 overflow-y-auto space-y-1 custom-scrollbar">
+                        {formData.selectedExerciseIds.length === 0 && (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2">
+                                <Activity size={24} className="opacity-20"/>
+                                <span className="text-xs">No exercises selected</span>
+                            </div>
+                        )}
+                        {formData.selectedExerciseIds.map(id => {
+                            const ex = allExercises.find(e => e.id === id);
+                            return ex ? (
+                                <div key={id} onClick={() => toggleExercise(id)}
+                                    className="p-2.5 rounded bg-slate-700 hover:bg-slate-600 cursor-pointer text-sm flex justify-between items-center group border-l-2 border-blue-500 shadow-sm">
+                                    <span className="text-white">{ex.name}</span>
+                                    <X size={14} className="text-slate-400 group-hover:text-red-400"/>
+                                </div>
+                            ) : null;
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-700 pt-6 mt-4">
+                <button onClick={closeModal} className="flex-1 py-3 border border-slate-600 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors font-medium">
+                    Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  {isEditing ? 'Update Training' : 'Create Training'}
+                <button onClick={handleSave} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors font-medium shadow-lg shadow-blue-900/20">
+                    {isEditing ? 'Update Training' : 'Create Training'}
                 </button>
-              </div>
-            </form>
+            </div>
+
           </div>
         </div>
       )}

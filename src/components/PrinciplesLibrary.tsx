@@ -1,498 +1,321 @@
-import { useState } from 'react';
-import { Search, Plus, X, Edit2, Upload } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Plus, X, Edit2, Trash2, Upload, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Principle {
   id: string;
   name: string;
-  gamePhase: 'In Possession' | 'Transition After Losing Possession' | 'Out of Possession' | 'Transition After Winning Possession' | 'Set Pieces';
+  gamePhase: string;
   description: string;
+  coachingNotes?: string;
+  implementationTips?: string;
   mediaUrl?: string;
-  mediaType?: 'image' | 'pdf' | 'video';
+  isCustom: boolean;
 }
 
 const mockPrinciples: Principle[] = [
-  {
-    id: 'p1',
-    name: 'Possession-Based Play',
-    gamePhase: 'In Possession',
-    description: 'Maintain control of the ball to dominate the game. By keeping possession, we dictate the tempo, tire the opposition, and create opportunities through patient build-up play.'
-  },
-  {
-    id: 'p2',
-    name: 'High Pressing',
-    gamePhase: 'Transition After Losing Possession',
-    description: 'Win the ball back quickly in the opponent\'s half. Apply immediate pressure when we lose possession to regain it in dangerous areas and create quick scoring opportunities.'
-  },
-  {
-    id: 'p3',
-    name: 'Quick Transitions',
-    gamePhase: 'Transition After Winning Possession',
-    description: 'Rapid switch from defense to attack. The first few seconds after winning the ball are crucial for creating goal-scoring opportunities.'
-  },
-  {
-    id: 'p4',
-    name: 'Defensive Shape',
-    gamePhase: 'Out of Possession',
-    description: 'Maintain compact and organized defensive structure. Proper positioning and coordination make it difficult for opponents to penetrate and create chances.'
-  },
-  {
-    id: 'p5',
-    name: 'Playing Out from the Back',
-    gamePhase: 'In Possession',
-    description: 'Build attacks from the goalkeeper and defenders. This creates numerical superiority in the first phase and allows better control of the game.'
+  { 
+    id: 'p1', 
+    name: 'Possession-Based Play', 
+    gamePhase: 'In Possession', 
+    description: 'Maintain control of the ball to dominate the game.', 
+    coachingNotes: 'Focus on triangles and player spacing.',
+    implementationTips: 'Start with 4v2 rondos\nProgress to positional play games',
+    isCustom: false 
   },
 ];
 
+const GAME_PHASES = [
+  "In Possession",
+  "Transition After Losing Possession",
+  "Out of Possession",
+  "Transition After Winning Possession",
+  "Set Pieces"
+];
+
 export default function PrinciplesLibrary() {
+  const [principles, setPrinciples] = useState<Principle[]>(mockPrinciples);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPrinciple, setSelectedPrinciple] = useState<Principle | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingNotes, setEditingNotes] = useState(false);
-  const [newPrinciple, setNewPrinciple] = useState({ name: '', gamePhase: 'In Possession', description: '' });
-  const [diagramPreview, setDiagramPreview] = useState<string | null>(null);
-  const [customPrinciples, setCustomPrinciples] = useState<Principle[]>([]);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedPrinciple, setEditedPrinciple] = useState<Principle | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  
+  const [formData, setFormData] = useState({ 
+    id: '', 
+    name: '', 
+    gamePhase: 'In Possession', 
+    description: '',
+    coachingNotes: '',
+    implementationTips: '',
+    mediaUrl: ''
+  });
 
-  const allPrinciples = [...mockPrinciples, ...customPrinciples];
+  useEffect(() => {
+    fetch('http://127.0.0.1:8000/principles')
+      .then(res => res.json())
+      .then(data => {
+        const dbItems = data.map((item: any) => ({ 
+            id: item.id,
+            name: item.name,
+            gamePhase: item.game_phase, 
+            description: item.description,
+            coachingNotes: item.coaching_notes || '',
+            implementationTips: item.implementation_tips || '',
+            mediaUrl: item.media_url,
+            isCustom: true 
+        }));
+        setPrinciples([...mockPrinciples, ...dbItems]);
+      })
+      .catch(() => toast.error("Backend offline"));
+  }, []);
 
-  const filteredPrinciples = allPrinciples.filter(principle =>
-    principle.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    principle.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleSave = async () => {
+    if (!formData.name || !formData.description) return toast.error('Fill required fields');
 
-  const handleCreatePrinciple = () => {
-    if (!newPrinciple.name || !newPrinciple.description) {
-      toast.error('Please fill in all fields');
-      return;
-    }
-    
-    const createdPrinciple: Principle = {
-      id: `custom-${Date.now()}`,
-      name: newPrinciple.name,
-      gamePhase: newPrinciple.gamePhase,
-      description: newPrinciple.description,
-      mediaUrl: diagramPreview || undefined,
-      mediaType: diagramPreview ? 'image' : undefined,
+    const payload = { 
+        name: formData.name, 
+        game_phase: formData.gamePhase, 
+        description: formData.description, 
+        coaching_notes: formData.coachingNotes,
+        implementation_tips: formData.implementationTips,
+        media_url: mediaPreview || formData.mediaUrl
     };
-    
-    setCustomPrinciples([...customPrinciples, createdPrinciple]);
-    toast.success('Principle created successfully!');
-    setShowCreateModal(false);
-    setNewPrinciple({ name: '', gamePhase: 'In Possession', description: '' });
-    setDiagramPreview(null);
+
+    try {
+      let response;
+      if (isEditing && formData.id && !formData.id.startsWith('p')) {
+        response = await fetch(`http://127.0.0.1:8000/principles/${formData.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+      } else {
+        response = await fetch('http://127.0.0.1:8000/principles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+      }
+
+      if (response.ok) {
+        const saved = await response.json();
+        const newItem = { 
+            id: saved.id,
+            name: saved.name,
+            gamePhase: saved.game_phase,
+            description: saved.description,
+            coachingNotes: saved.coaching_notes,
+            implementationTips: saved.implementation_tips,
+            mediaUrl: saved.media_url,
+            isCustom: true 
+        };
+        
+        if (isEditing) {
+            setPrinciples(prev => prev.map(p => p.id === newItem.id ? newItem : p));
+            toast.success('Updated successfully!');
+        } else {
+            setPrinciples(prev => [...prev, newItem]);
+            toast.success('Created successfully!');
+        }
+        closeModal();
+      }
+    } catch {
+      toast.error('Connection failed');
+    }
   };
 
-  const handleDiagramUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDelete = async (id: string) => {
+    if (id.startsWith('p')) {
+        setPrinciples(prev => prev.filter(p => p.id !== id));
+        return;
+    }
+    await fetch(`http://127.0.0.1:8000/principles/${id}`, { method: 'DELETE' });
+    setPrinciples(prev => prev.filter(p => p.id !== id));
+    toast.success('Deleted');
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setDiagramPreview(reader.result as string);
-      };
+      reader.onloadend = () => setMediaPreview(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
 
-  const handleEditPrinciple = () => {
-    if (!editedPrinciple) return;
-    
-    const updatedPrinciples = customPrinciples.map(principle =>
-      principle.id === editedPrinciple.id ? { ...editedPrinciple, mediaUrl: diagramPreview || editedPrinciple.mediaUrl, mediaType: diagramPreview ? 'image' : editedPrinciple.mediaType } : principle
-    );
-    
-    setCustomPrinciples(updatedPrinciples);
-    setSelectedPrinciple({ ...editedPrinciple, mediaUrl: diagramPreview || editedPrinciple.mediaUrl, mediaType: diagramPreview ? 'image' : editedPrinciple.mediaType });
+  const closeModal = () => {
+    setShowCreateModal(false);
     setIsEditing(false);
-    setDiagramPreview(null);
-    toast.success('Principle updated successfully!');
+    setMediaPreview(null);
+    setFormData({ id: '', name: '', gamePhase: 'In Possession', description: '', coachingNotes: '', implementationTips: '', mediaUrl: '' });
   };
 
-  const startEditing = () => {
-    if (selectedPrinciple && selectedPrinciple.id.startsWith('custom-')) {
-      setEditedPrinciple({ ...selectedPrinciple });
-      setDiagramPreview(selectedPrinciple.mediaUrl || null);
-      setIsEditing(true);
-    } else {
-      toast.error('Only custom principles can be edited');
-    }
+  const openEdit = (p: Principle) => {
+    setFormData({ 
+        id: p.id, 
+        name: p.name, 
+        gamePhase: p.gamePhase, 
+        description: p.description,
+        coachingNotes: p.coachingNotes || '',
+        implementationTips: p.implementationTips || '',
+        mediaUrl: p.mediaUrl || ''
+    });
+    setMediaPreview(p.mediaUrl || null);
+    setIsEditing(true);
+    setShowCreateModal(true);
+  };
+
+  const filteredPrinciples = principles.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const renderTips = (text?: string) => {
+    if (!text) return null;
+    return text.split('\n').map((tip, i) => tip.trim() && (
+        <li key={i} className="flex items-start gap-3 mb-2 text-slate-400 text-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 mt-1.5" />
+            <span className="leading-relaxed">{tip}</span>
+        </li>
+    ));
   };
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl text-gray-900 dark:text-gray-100 mb-2">Principles Library</h1>
-          <p className="text-gray-600 dark:text-gray-400">Your coaching philosophy and core beliefs</p>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Create Principle
+        <div><h1 className="text-3xl font-bold dark:text-white">Principles Library</h1><p className="text-gray-400 mt-1">Tactical philosophy</p></div>
+        <button onClick={() => setShowCreateModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex gap-2 items-center shadow-lg transition-colors">
+            <Plus size={18}/> Create Principle
         </button>
       </div>
 
-      {/* Search */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6">
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 dark:text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search principles..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      <div className="bg-white dark:bg-[#1e2330] border border-gray-200 dark:border-slate-800 rounded-xl p-4 mb-6">
+        <div className="flex items-center gap-3 bg-gray-50 dark:bg-[#151922] border border-gray-200 dark:border-slate-800 rounded-lg px-4 py-2.5">
+            <Search className="text-slate-400" size={18} />
+            <input className="bg-transparent w-full outline-none dark:text-slate-200 placeholder-slate-500" 
+                placeholder="Search principles..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
       </div>
 
-      {/* Principles List */}
       <div className="space-y-4">
-        {filteredPrinciples.map((principle) => (
-          <button
-            key={principle.id}
-            onClick={() => setSelectedPrinciple(principle)}
-            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg hover:border-purple-300 dark:hover:border-purple-600 transition-all cursor-pointer text-left"
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-lg text-gray-900 dark:text-gray-100">{principle.name}</h3>
-                  <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-xs">
-                    {principle.gamePhase}
-                  </span>
+        {filteredPrinciples.map((p) => (
+            <div key={p.id} className="bg-white dark:bg-[#1e2330] p-6 rounded-xl border border-gray-200 dark:border-slate-800 hover:shadow-xl hover:border-purple-500/20 transition-all group relative">
+                
+                {/* Header Section */}
+                <div className="flex justify-between items-start mb-3">
+                    <div>
+                        <h3 className="text-xl font-bold dark:text-white mb-2">{p.name}</h3>
+                        <span className="text-xs bg-[#2d2a3e] text-purple-400 border border-purple-500/20 px-2.5 py-1 rounded font-medium inline-block">
+                            {p.gamePhase}
+                        </span>
+                    </div>
                 </div>
-                <p className="text-gray-600 dark:text-gray-400 line-clamp-2">{principle.description}</p>
-              </div>
+
+                <p className="text-gray-400 leading-relaxed text-sm mb-5">{p.description}</p>
+                
+                {/* COACHING NOTES (Yellow Box) */}
+                {p.coachingNotes && (
+                    <div className="mb-5 bg-[rgba(234,179,8,0.05)] border border-yellow-500/20 rounded-lg p-4">
+                        <h4 className="text-yellow-500 text-[10px] uppercase font-bold tracking-widest mb-2">Coaching Note</h4>
+                        <p className="text-yellow-200/80 text-sm leading-relaxed">{p.coachingNotes}</p>
+                    </div>
+                )}
+
+                {/* IMPLEMENTATION TIPS (List) */}
+                {p.implementationTips && (
+                    <div className="border-t border-slate-800 pt-4">
+                        <h4 className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mb-3">Implementation Tips</h4>
+                        <ul className="space-y-1">{renderTips(p.implementationTips)}</ul>
+                    </div>
+                )}
+
+                {/* MEDIA */}
+                {p.mediaUrl && (
+                    <div className="mt-5 border-t border-slate-800 pt-4">
+                        <h4 className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mb-3">Attached Media</h4>
+                        <img src={p.mediaUrl} alt="Principle Media" className="rounded-lg max-h-48 object-cover border border-slate-700/50" />
+                    </div>
+                )}
+
+                {/* ACTION BUTTONS - BOTTOM RIGHT (Floating on Hover) */}
+                {p.isCustom && (
+                    <div className="absolute bottom-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); openEdit(p); }} 
+                            className="p-2 text-slate-400 bg-[#1e2330] hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors border border-slate-700/50 shadow-lg"
+                            title="Edit"
+                         >
+                            <Edit2 size={16} />
+                         </button>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} 
+                            className="p-2 text-slate-400 bg-[#1e2330] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-slate-700/50 shadow-lg"
+                            title="Delete"
+                         >
+                            <Trash2 size={16} />
+                         </button>
+                    </div>
+                )}
             </div>
-          </button>
         ))}
       </div>
 
-      {/* Detail Modal */}
-      {selectedPrinciple && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-8">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl text-gray-900 dark:text-gray-100">{selectedPrinciple.name}</h2>
-              <div className="flex items-center gap-2">
-                {selectedPrinciple.id.startsWith('custom-') && (
-                  <button
-                    onClick={startEditing}
-                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Edit
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setSelectedPrinciple(null);
-                    setEditingNotes(false);
-                    setIsEditing(false);
-                  }}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5 dark:text-gray-300" />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div>
-                <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Game Phase</h4>
-                <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded text-sm">
-                  {selectedPrinciple.gamePhase}
-                </span>
-              </div>
-
-              <div>
-                <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Description</h4>
-                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{selectedPrinciple.description}</p>
-              </div>
-
-              {selectedPrinciple.mediaUrl && (
-                <div>
-                  <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Media</h4>
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                    <img src={selectedPrinciple.mediaUrl} alt={`${selectedPrinciple.name} media`} className="w-full h-64 object-cover" />
-                  </div>
-                </div>
-              )}
-
-              <div className="border-t border-gray-200 pt-6">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm text-gray-500">Coaching Notes</h4>
-                  <button
-                    onClick={() => setEditingNotes(!editingNotes)}
-                    className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
-                  >
-                    <Edit2 className="w-3 h-3" />
-                    {editingNotes ? 'Save' : 'Edit'}
-                  </button>
-                </div>
-                {editingNotes ? (
-                  <textarea
-                    defaultValue={selectedPrinciple.description}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    rows={5}
-                    placeholder="Add your coaching notes..."
-                  />
-                ) : (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <p className="text-gray-900">{selectedPrinciple.description}</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-gray-200 pt-6">
-                <h4 className="text-sm text-gray-500 mb-3">Implementation Tips</h4>
-                <ul className="space-y-2">
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-600 mt-1">•</span>
-                    <span className="text-gray-900">Introduce the principle gradually in training sessions</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-600 mt-1">•</span>
-                    <span className="text-gray-900">Use video analysis to demonstrate successful application</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-600 mt-1">•</span>
-                    <span className="text-gray-900">Reinforce through consistent messaging and feedback</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-600 mt-1">•</span>
-                    <span className="text-gray-900">Review and adjust based on team performance</span>
-                  </li>
-                </ul>
-              </div>
-
-              <button
-                onClick={() => {
-                  setSelectedPrinciple(null);
-                  setEditingNotes(false);
-                  setIsEditing(false);
-                }}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Principle Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-8">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl text-gray-900 dark:text-gray-100">Create New Principle</h2>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 dark:text-gray-300" />
-              </button>
-            </div>
-
-            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleCreatePrinciple(); }}>
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Name</label>
-                <input
-                  type="text"
-                  value={newPrinciple.name}
-                  onChange={(e) => setNewPrinciple({ ...newPrinciple, name: e.target.value })}
-                  placeholder="e.g., Counter-Pressing"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Game Phase</label>
-                <select
-                  value={newPrinciple.gamePhase}
-                  onChange={(e) => setNewPrinciple({ ...newPrinciple, gamePhase: e.target.value as 'In Possession' | 'Transition After Losing Possession' | 'Out of Possession' | 'Transition After Winning Possession' | 'Set Pieces' })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="In Possession">In Possession</option>
-                  <option value="Transition After Losing Possession">Transition After Losing Possession</option>
-                  <option value="Out of Possession">Out of Possession</option>
-                  <option value="Transition After Winning Possession">Transition After Winning Possession</option>
-                  <option value="Set Pieces">Set Pieces</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Description</label>
-                <textarea
-                  value={newPrinciple.description}
-                  onChange={(e) => setNewPrinciple({ ...newPrinciple, description: e.target.value })}
-                  placeholder="Describe your coaching philosophy for this principle..."
-                  rows={5}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Diagram (Optional)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleDiagramUpload}
-                    className="hidden"
-                    id="principle-diagram-upload"
-                  />
-                  <label
-                    htmlFor="principle-diagram-upload"
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Upload Diagram
-                  </label>
-                  {diagramPreview && (
-                    <button
-                      type="button"
-                      onClick={() => setDiagramPreview(null)}
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={closeModal}>
+            <div className="bg-[#1e2330] p-6 rounded-xl w-full max-w-lg text-white border border-slate-700 shadow-2xl overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between mb-6 border-b border-slate-700 pb-4">
+                    <h2 className="text-xl font-bold">{isEditing ? 'Edit Principle' : 'New Principle'}</h2>
+                    <button onClick={closeModal}><X className="text-slate-400 hover:text-white transition-colors"/></button>
                 </div>
-                {diagramPreview && (
-                  <div className="mt-3 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                    <img src={diagramPreview} alt="Diagram preview" className="w-full h-48 object-cover" />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Create
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Principle Modal */}
-      {isEditing && editedPrinciple && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-8">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl text-gray-900">Edit Principle</h2>
-              <button
-                onClick={() => setIsEditing(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleEditPrinciple(); }}>
-              <div>
-                <label className="block text-sm text-gray-700 mb-2">Name</label>
-                <input
-                  type="text"
-                  value={editedPrinciple.name}
-                  onChange={(e) => setEditedPrinciple({ ...editedPrinciple, name: e.target.value })}
-                  placeholder="e.g., Counter-Pressing"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 mb-2">Game Phase</label>
-                <select
-                  value={editedPrinciple.gamePhase}
-                  onChange={(e) => setEditedPrinciple({ ...editedPrinciple, gamePhase: e.target.value as 'In Possession' | 'Transition After Losing Possession' | 'Out of Possession' | 'Transition After Winning Possession' | 'Set Pieces' })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="In Possession">In Possession</option>
-                  <option value="Transition After Losing Possession">Transition After Losing Possession</option>
-                  <option value="Out of Possession">Out of Possession</option>
-                  <option value="Transition After Winning Possession">Transition After Winning Possession</option>
-                  <option value="Set Pieces">Set Pieces</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 mb-2">Description</label>
-                <textarea
-                  value={editedPrinciple.description}
-                  onChange={(e) => setEditedPrinciple({ ...editedPrinciple, description: e.target.value })}
-                  placeholder="Describe your coaching philosophy for this principle..."
-                  rows={5}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 mb-2">Diagram (Optional)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleDiagramUpload}
-                    className="hidden"
-                    id="principle-diagram-upload-edit"
-                  />
-                  <label
-                    htmlFor="principle-diagram-upload-edit"
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Upload Diagram
-                  </label>
-                  {diagramPreview && (
-                    <button
-                      type="button"
-                      onClick={() => setDiagramPreview(null)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
+                <div className="space-y-5">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Name</label>
+                        <input className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-purple-500 outline-none transition-colors"
+                            value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. High Press" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Phase</label>
+                        <select className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-purple-500 outline-none transition-colors"
+                            value={formData.gamePhase} onChange={e => setFormData({...formData, gamePhase: e.target.value})}>
+                            {GAME_PHASES.map(phase => (
+                                <option key={phase} value={phase}>{phase}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Description</label>
+                        <textarea className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-purple-500 outline-none resize-none h-24 transition-colors"
+                            value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Coaching Notes (Yellow Box)</label>
+                        <textarea className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-yellow-500 outline-none resize-none h-20 transition-colors"
+                            value={formData.coachingNotes} onChange={e => setFormData({...formData, coachingNotes: e.target.value})} placeholder="Key details to focus on..." />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Implementation Tips (One per line)</label>
+                        <textarea className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none resize-none h-24 transition-colors"
+                            value={formData.implementationTips} onChange={e => setFormData({...formData, implementationTips: e.target.value})} placeholder="Start with basics&#10;Progress to complex drills" />
+                    </div>
+                    {/* Media Upload */}
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Media / Diagram</label>
+                        <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-2 px-4 py-2 bg-[#151922] border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800 cursor-pointer transition-colors">
+                                <Upload size={16} /> Upload File
+                                <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
+                            </label>
+                            {mediaPreview && <span className="text-xs text-green-400 flex items-center gap-1"><Image as ImageIcon size={12}/> Selected</span>}
+                        </div>
+                        {mediaPreview && (
+                            <div className="mt-2 h-32 bg-black/50 rounded-lg border border-slate-700 overflow-hidden flex items-center justify-center">
+                                <img src={mediaPreview} alt="Preview" className="h-full object-contain" />
+                            </div>
+                        )}
+                    </div>
                 </div>
-                {diagramPreview && (
-                  <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
-                    <img src={diagramPreview} alt="Diagram preview" className="w-full h-48 object-cover" />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Update
-                </button>
-              </div>
-            </form>
-          </div>
+                <div className="flex gap-3 mt-8">
+                    <button onClick={closeModal} className="flex-1 py-2.5 border border-slate-600 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors">Cancel</button>
+                    <button onClick={handleSave} className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 rounded-lg text-white font-medium shadow-lg transition-colors">Save</button>
+                </div>
+            </div>
         </div>
       )}
     </div>

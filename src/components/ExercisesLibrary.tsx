@@ -1,77 +1,48 @@
 import { useState, useEffect } from 'react';
-import { Plus, X, Search, Edit2, Upload, Trash2 } from 'lucide-react';
+import { Plus, X, Search, Edit2, Trash2, Upload, Check, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
+// --- Types ---
 interface Exercise {
   id: string;
   name: string;
-  equipment: string[];
-  setup: string;
-  description: string;
-  variations: string;
   intensity: 'Low' | 'Medium' | 'High';
-  goalkeepers: number;
+  description: string;
+  setup: string;
+  variations: string;
   coachingPoints: string;
-  linkedPrinciples?: string[];
-  linkedBasics?: string[];
+  goalkeepers: number;
+  equipment: string[];
+  linkedBasics: string[];
+  linkedPrinciples: string[];
+  linkedTactics: string[];
   mediaUrl?: string;
-  mediaType?: 'image' | 'pdf' | 'video';
   isCustom: boolean;
 }
 
-interface Basic {
-  id: string;
-  name: string;
-}
-
-interface Principle {
-  id: string;
-  name: string;
-}
-
-interface Tactic {
-  id: string;
-  name: string;
-}
-
-const equipmentOptions = [
-  'Balls',
-  'Cones',
-  'Bibs/Vests',
-  'Goals',
-  'Hurdles',
-  'Poles',
-  'Agility Ladder',
-  'Markers',
-  'Mannequins',
-  'Mini Goals'
-];
+interface SelectorItem { id: string; name: string; }
 
 const mockExercises: Exercise[] = [
   {
     id: 'ex1',
     name: 'Rondo 4v2',
     equipment: ['Balls', 'Cones', 'Bibs/Vests'],
-    setup: 'Create a 10x10 yard square with cones. 4 players on the outside, 2 defenders in the middle.',
+    setup: 'Create a 10x10 yard square with cones.',
     description: 'Possession drill where 4 attackers maintain possession against 2 defenders in a confined space.',
-    variations: 'Increase to 5v2 or 6v2, reduce space, add 2-touch limit, or require one-touch play.',
+    variations: '5v2, One touch limit.',
     intensity: 'Medium',
     goalkeepers: 0,
-    coachingPoints: 'Quick movement off the ball, body shape to receive, quality of first touch, communication.',
+    coachingPoints: 'Quick movement, body shape, first touch.',
+    linkedBasics: ['Passing Accuracy'],
+    linkedPrinciples: [],
+    linkedTactics: [],
     isCustom: false
   },
-  {
-    id: 'ex2',
-    name: 'Finishing in the Box',
-    equipment: ['Balls', 'Goals', 'Cones'],
-    setup: 'Set up crosses from both flanks into the penalty box. Position players at various spots in the box.',
-    description: 'Players practice finishing from crosses delivered from wide positions.',
-    variations: 'Change crossing positions, add defenders, vary delivery (ground/air), goalkeeper opposition.',
-    intensity: 'High',
-    goalkeepers: 1,
-    coachingPoints: 'Timing of run, body position, technique selection (volley/header), anticipation.',
-    isCustom: false
-  }
+];
+
+const equipmentOptions = [
+  'Balls', 'Cones', 'Bibs/Vests', 'Goals', 'Hurdles', 
+  'Poles', 'Agility Ladder', 'Markers', 'Mannequins', 'Mini Goals'
 ];
 
 export default function ExercisesLibrary() {
@@ -81,682 +52,435 @@ export default function ExercisesLibrary() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+
+  // Selector Lists
+  const [allBasics, setAllBasics] = useState<SelectorItem[]>([]);
+  const [allPrinciples, setAllPrinciples] = useState<SelectorItem[]>([]);
+  const [allTactics, setAllTactics] = useState<SelectorItem[]>([]);
   
-  // Search states for multi-selects
   const [basicsSearch, setBasicsSearch] = useState('');
   const [principlesSearch, setPrinciplesSearch] = useState('');
   const [tacticsSearch, setTacticsSearch] = useState('');
 
-  // Form state
-  const [formData, setFormData] = useState<Partial<Exercise>>({
-    name: '',
-    equipment: [],
-    setup: '',
-    description: '',
-    variations: '',
-    intensity: 'Medium',
-    goalkeepers: 0,
-    coachingPoints: '',
-    linkedPrinciples: [],
-    linkedBasics: []
+  const [formData, setFormData] = useState<Exercise>({
+    id: '', name: '', intensity: 'Medium', description: '', setup: '',
+    variations: '', coachingPoints: '', goalkeepers: 0,
+    equipment: [], linkedBasics: [], linkedPrinciples: [], linkedTactics: [], isCustom: true, mediaUrl: ''
   });
 
-  // Load exercises from localStorage
+  // --- 1. LOAD DATA ---
   useEffect(() => {
-    const saved = localStorage.getItem('exercises');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setExercises([...mockExercises, ...parsed.filter((ex: Exercise) => ex.isCustom)]);
-    }
+    fetch('http://127.0.0.1:8000/exercises')
+      .then(res => res.json())
+      .then(data => {
+        const formatted = data.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          intensity: item.intensity,
+          setup: item.setup || '',
+          variations: item.variations || '',
+          coachingPoints: item.coaching_points || '',
+          goalkeepers: item.goalkeepers || 0,
+          equipment: item.equipment ? item.equipment.split(',') : [],
+          linkedBasics: item.linked_basics ? item.linked_basics.split(',') : [],
+          linkedPrinciples: item.linked_principles ? item.linked_principles.split(',') : [],
+          linkedTactics: item.linked_tactics ? item.linked_tactics.split(',') : [],
+          isCustom: true,
+          mediaUrl: item.media_url
+        }));
+        setExercises([...mockExercises, ...formatted]);
+      })
+      .catch(() => {
+        toast.error("Backend offline - Showing mocks only");
+        setExercises(mockExercises);
+      });
 
-    // Load basics, principles, and tactics from localStorage
-    const savedBasics = localStorage.getItem('customBasics');
-    if (savedBasics) {
-      const parsedBasics = JSON.parse(savedBasics);
-      setAvailableBasics([...availableBasics, ...parsedBasics.map((b: any) => ({ id: b.id, name: b.name }))]);
-    }
-
-    const savedPrinciples = localStorage.getItem('customPrinciples');
-    if (savedPrinciples) {
-      const parsedPrinciples = JSON.parse(savedPrinciples);
-      setAvailablePrinciples([...availablePrinciples, ...parsedPrinciples.map((p: any) => ({ id: p.id, name: p.name }))]);
-    }
-
-    const savedTactics = localStorage.getItem('customTactics');
-    if (savedTactics) {
-      const parsedTactics = JSON.parse(savedTactics);
-      setAvailableTactics([...availableTactics, ...parsedTactics.map((t: any) => ({ id: t.id, name: t.name }))]);
-    }
+      const fetchSelectors = async () => {
+        try {
+            const [bRes, pRes, tRes] = await Promise.all([
+                fetch('http://127.0.0.1:8000/basics'),
+                fetch('http://127.0.0.1:8000/principles'),
+                fetch('http://127.0.0.1:8000/tactics')
+            ]);
+            if(bRes.ok) setAllBasics(await bRes.json());
+            if(pRes.ok) setAllPrinciples(await pRes.json());
+            if(tRes.ok) setAllTactics(await tRes.json());
+        } catch (e) {
+            console.error("Failed to load selector lists", e);
+        }
+      };
+      fetchSelectors();
   }, []);
 
-  // Save exercises to localStorage
-  useEffect(() => {
-    const customExercises = exercises.filter(ex => ex.isCustom);
-    localStorage.setItem('exercises', JSON.stringify(customExercises));
-  }, [exercises]);
-
-  // Mock data - in real app, load from localStorage or API
-  const [availableBasics, setAvailableBasics] = useState<Basic[]>([
-    { id: 'b1', name: 'Passing Accuracy' },
-    { id: 'b2', name: 'Ball Control' },
-    { id: 'b3', name: 'Shooting Technique' }
-  ]);
-
-  const [availablePrinciples, setAvailablePrinciples] = useState<Principle[]>([
-    { id: 'p1', name: 'Possession-Based Play' },
-    { id: 'p2', name: 'High Pressing' },
-    { id: 'p3', name: 'Quick Transitions' }
-  ]);
-
-  const [availableTactics, setAvailableTactics] = useState<Tactic[]>([
-    { id: 't1', name: 'Counter-Attack' },
-    { id: 't2', name: 'Defensive Shape' },
-    { id: 't3', name: 'Offside Trap' }
-  ]);
-
-  const filteredExercises = exercises.filter(ex =>
-    ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    ex.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleCreateExercise = () => {
+  // --- 2. SAVE DATA ---
+  const handleSave = async () => {
     if (!formData.name || !formData.description) {
-      toast.error('Please fill in required fields');
+      toast.error('Name and Description are required');
       return;
     }
 
-    const newExercise: Exercise = {
-      id: `custom-${Date.now()}`,
+    const payload = {
       name: formData.name,
-      equipment: formData.equipment || [],
-      setup: formData.setup || '',
-      description: formData.description || '',
-      variations: formData.variations || '',
-      intensity: formData.intensity || 'Medium',
-      goalkeepers: formData.goalkeepers || 0,
-      coachingPoints: formData.coachingPoints || '',
-      linkedPrinciples: formData.linkedPrinciples || [],
-      linkedBasics: formData.linkedBasics || [],
-      mediaUrl: mediaPreview || undefined,
-      isCustom: true
+      description: formData.description,
+      intensity: formData.intensity,
+      setup: formData.setup,
+      variations: formData.variations,
+      coaching_points: formData.coachingPoints,
+      goalkeepers: formData.goalkeepers,
+      equipment: formData.equipment.join(','),
+      linked_basics: formData.linkedBasics.join(','),
+      linked_principles: formData.linkedPrinciples.join(','),
+      linked_tactics: formData.linkedTactics.join(','),
+      media_url: mediaPreview || formData.mediaUrl
     };
 
-    setExercises([...exercises, newExercise]);
-    toast.success('Exercise created successfully!');
+    try {
+      let response;
+      if (isEditing && formData.id && !formData.id.startsWith('ex')) {
+        response = await fetch(`http://127.0.0.1:8000/exercises/${formData.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+      } else {
+        response = await fetch('http://127.0.0.1:8000/exercises', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+      }
+
+      if (!response.ok) throw new Error('Server Error');
+
+      const savedRaw = await response.json();
+      const savedFormatted: Exercise = {
+          ...formData,
+          id: savedRaw.id,
+          isCustom: true,
+          mediaUrl: savedRaw.media_url
+      };
+
+      if (isEditing) {
+        setExercises(prev => prev.map(ex => ex.id === savedFormatted.id ? savedFormatted : ex));
+        toast.success('Exercise Updated!');
+      } else {
+        setExercises(prev => [...prev, savedFormatted]);
+        toast.success('Exercise Created!');
+      }
+      
+      closeModal();
+    } catch (error) {
+      toast.error('Failed to save');
+    }
+  };
+
+  // --- 3. DELETE ---
+  const handleDeleteExercise = async (id: string) => {
+    if (id.startsWith('ex')) {
+        setExercises(prev => prev.filter(ex => ex.id !== id));
+        toast.success('Mock exercise removed');
+        setSelectedExercise(null);
+        return;
+    }
+
+    try {
+        const response = await fetch(`http://127.0.0.1:8000/exercises/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            setExercises(prev => prev.filter(ex => ex.id !== id));
+            toast.success('Exercise deleted');
+            setSelectedExercise(null);
+        } else {
+            toast.error('Failed to delete');
+        }
+    } catch (e) {
+        toast.error('Connection failed');
+    }
+  };
+
+  // --- UI Helpers ---
+  const resetForm = () => {
+    setFormData({
+      id: '', name: '', intensity: 'Medium', description: '', setup: '',
+      variations: '', coachingPoints: '', goalkeepers: 0,
+      equipment: [], linkedBasics: [], linkedPrinciples: [], linkedTactics: [], isCustom: true, mediaUrl: ''
+    });
+    setMediaPreview(null);
+    setBasicsSearch(''); setPrinciplesSearch(''); setTacticsSearch('');
+  };
+
+  const closeModal = () => {
+    setShowCreateModal(false);
+    setIsEditing(false);
+    setSelectedExercise(null);
     resetForm();
   };
 
-  const handleEditExercise = () => {
-    if (!formData.name || !formData.description || !selectedExercise) {
-      toast.error('Please fill in required fields');
-      return;
-    }
-
-    const updatedExercise: Exercise = {
-      ...selectedExercise,
-      name: formData.name,
-      equipment: formData.equipment || [],
-      setup: formData.setup || '',
-      description: formData.description || '',
-      variations: formData.variations || '',
-      intensity: formData.intensity || 'Medium',
-      goalkeepers: formData.goalkeepers || 0,
-      coachingPoints: formData.coachingPoints || '',
-      linkedPrinciples: formData.linkedPrinciples || [],
-      linkedBasics: formData.linkedBasics || [],
-      mediaUrl: mediaPreview || selectedExercise.mediaUrl
-    };
-
-    setExercises(exercises.map(ex => ex.id === selectedExercise.id ? updatedExercise : ex));
-    setSelectedExercise(updatedExercise);
-    toast.success('Exercise updated successfully!');
-    setIsEditing(false);
-    setMediaPreview(null);
-  };
-
-  const handleDeleteExercise = (id: string) => {
-    setExercises(exercises.filter(ex => ex.id !== id));
-    setSelectedExercise(null);
-    toast.success('Exercise deleted successfully!');
-  };
-
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      equipment: [],
-      setup: '',
-      description: '',
-      variations: '',
-      intensity: 'Medium',
-      goalkeepers: 0,
-      coachingPoints: '',
-      linkedPrinciples: [],
-      linkedBasics: []
-    });
-    setMediaPreview(null);
-    setShowCreateModal(false);
-  };
-
-  const startEditing = (exercise: Exercise) => {
-    setFormData({
-      name: exercise.name,
-      equipment: exercise.equipment,
-      setup: exercise.setup,
-      description: exercise.description,
-      variations: exercise.variations,
-      intensity: exercise.intensity,
-      goalkeepers: exercise.goalkeepers,
-      coachingPoints: exercise.coachingPoints,
-      linkedPrinciples: exercise.linkedPrinciples || [],
-      linkedBasics: exercise.linkedBasics || []
-    });
-    setMediaPreview(exercise.mediaUrl || null);
+  const openEditModal = (ex: Exercise) => {
+    setFormData(ex);
+    setMediaPreview(ex.mediaUrl || null);
     setIsEditing(true);
+    setShowCreateModal(true);
   };
 
-  const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const toggleSelection = (field: 'equipment' | 'linkedBasics' | 'linkedPrinciples' | 'linkedTactics', item: string) => {
+    const list = formData[field];
+    const newList = list.includes(item) ? list.filter(i => i !== item) : [...list, item];
+    setFormData({ ...formData, [field]: newList });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setMediaPreview(reader.result as string);
-      };
+      reader.onloadend = () => setMediaPreview(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
 
-  const toggleEquipment = (item: string) => {
-    const current = formData.equipment || [];
-    if (current.includes(item)) {
-      setFormData({ ...formData, equipment: current.filter(e => e !== item) });
-    } else {
-      setFormData({ ...formData, equipment: [...current, item] });
-    }
-  };
-
-  const getIntensityColor = (intensity: string) => {
-    switch (intensity) {
-      case 'Low': return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300';
-      case 'Medium': return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300';
-      case 'High': return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
-      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300';
-    }
-  };
+  const filteredExercises = exercises.filter(ex => 
+    ex.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl text-gray-900 dark:text-gray-100 mb-2">Exercises Library</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage training exercises and drills</p>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Create Exercise
+        <div><h1 className="text-3xl font-bold dark:text-white">Exercises Library</h1><p className="text-gray-400 mt-1">Manage training exercises and drills</p></div>
+        <button onClick={() => {resetForm(); setShowCreateModal(true)}} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex gap-2 items-center hover:bg-blue-700 transition-colors shadow-lg">
+          <Plus size={18} /> Create Exercise
         </button>
       </div>
 
-      {/* Search */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6">
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 dark:text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search exercises..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      <div className="bg-white dark:bg-[#1e2330] border border-gray-200 dark:border-slate-800 rounded-xl p-4 mb-6">
+        <div className="flex items-center gap-3 bg-gray-50 dark:bg-[#151922] border border-gray-200 dark:border-slate-800 rounded-lg px-4 py-2.5">
+            <Search className="text-slate-400" size={18} />
+            <input className="bg-transparent w-full outline-none dark:text-slate-200 placeholder-slate-500" 
+                placeholder="Search exercises..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
       </div>
 
-      {/* Exercises List */}
-      <div className="grid grid-cols-2 gap-6">
-        {filteredExercises.map((exercise) => (
-          <button
-            key={exercise.id}
-            onClick={() => setSelectedExercise(exercise)}
-            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer text-left"
-          >
-            <div className="flex items-start justify-between mb-3">
-              <h3 className="text-lg text-gray-900 dark:text-gray-100 flex-1">{exercise.name}</h3>
-              <span className={`px-2 py-1 rounded text-xs ${getIntensityColor(exercise.intensity)}`}>
-                {exercise.intensity}
-              </span>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredExercises.map(ex => (
+          <div key={ex.id} onClick={() => setSelectedExercise(ex)} className="group bg-white dark:bg-[#1e2330] p-6 rounded-xl border border-gray-200 dark:border-slate-800 hover:border-blue-500/30 transition-all cursor-pointer shadow-sm hover:shadow-xl flex flex-col h-full">
+            <div className="flex justify-between items-start mb-4">
+                <h3 className="font-bold text-lg dark:text-slate-100 group-hover:text-blue-400 transition-colors">{ex.name}</h3>
+                <span className={`px-2.5 py-1 rounded text-xs font-medium border border-[#3b3226] bg-[#2a2218] text-amber-500`}>{ex.intensity}</span>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">{exercise.description}</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              {exercise.equipment.slice(0, 3).map((item, idx) => (
-                <span key={idx} className="px-2 py-1 bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded text-xs">
-                  {item}
-                </span>
-              ))}
-              {exercise.equipment.length > 3 && (
-                <span className="text-xs text-gray-500 dark:text-gray-400">+{exercise.equipment.length - 3} more</span>
-              )}
+            <p className="text-sm text-gray-500 dark:text-slate-400 line-clamp-3 mb-5 leading-relaxed">{ex.description}</p>
+            <div className="flex flex-wrap gap-2 mt-auto">
+                {ex.equipment.slice(0,3).map((e, i) => <span key={i} className="text-[11px] bg-[#151922] text-slate-400 px-2.5 py-1.5 rounded border border-slate-700/50">{e}</span>)}
+                {ex.equipment.length > 3 && <span className="text-[11px] text-slate-500 pt-1">+{ex.equipment.length - 3}</span>}
             </div>
-          </button>
+          </div>
         ))}
       </div>
 
-      {/* Detail Modal */}
-      {selectedExercise && !isEditing && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-8">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl text-gray-900 dark:text-gray-100">{selectedExercise.name}</h2>
-              <div className="flex items-center gap-2">
-                {selectedExercise.isCustom && (
-                  <>
-                    <button
-                      onClick={() => startEditing(selectedExercise)}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteExercise(selectedExercise.id)}
-                      className="px-3 py-1 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Delete
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => setSelectedExercise(null)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5 dark:text-gray-300" />
-                </button>
-              </div>
+      {/* DETAIL MODAL (Matching Figma Style) */}
+      {selectedExercise && !showCreateModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-8" onClick={closeModal}>
+          <div className="bg-[#1e2330] rounded-xl max-w-4xl w-full p-8 max-h-[90vh] overflow-y-auto shadow-2xl relative border border-slate-700" onClick={e => e.stopPropagation()}>
+            <button onClick={closeModal} className="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors z-10"><X size={24} /></button>
+            
+            {/* Header with Edit/Delete Icons next to Title */}
+            <div className="mb-6">
+                <div className="flex items-center gap-3 mb-3">
+                    <h2 className="text-3xl font-bold text-white">{selectedExercise.name}</h2>
+                    {selectedExercise.isCustom && (
+                        <div className="flex gap-2 ml-2">
+                            {/* UPDATED: Buttons now slate-500 by default, colored on hover */}
+                            <button 
+                                onClick={() => openEditModal(selectedExercise)} 
+                                className="p-1.5 text-slate-500 hover:text-blue-500 hover:bg-blue-500/10 rounded transition-colors"
+                                title="Edit"
+                            >
+                                <Edit2 size={20} />
+                            </button>
+                            <button 
+                                onClick={() => handleDeleteExercise(selectedExercise.id)} 
+                                className="p-1.5 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                                title="Delete"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+                        </div>
+                    )}
+                </div>
+                {/* Badges */}
+                <div className="flex gap-3">
+                    <span className="px-3 py-1 bg-[#2a2218] border border-[#3b3226] text-amber-500 text-sm rounded font-medium">{selectedExercise.intensity} Intensity</span>
+                    <span className="px-3 py-1 bg-[#151922] border border-slate-700 text-slate-300 text-sm rounded font-medium">{selectedExercise.goalkeepers} Goalkeepers</span>
+                </div>
             </div>
 
             <div className="space-y-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Intensity</h4>
-                  <span className={`inline-block px-3 py-1 rounded text-sm ${getIntensityColor(selectedExercise.intensity)}`}>
-                    {selectedExercise.intensity}
-                  </span>
+                {[
+                    { label: 'DESCRIPTION', value: selectedExercise.description },
+                    { label: 'SETUP', value: selectedExercise.setup },
+                    { label: 'COACHING POINTS', value: selectedExercise.coachingPoints },
+                ].map(section => section.value && (
+                    <div key={section.label}>
+                        <h4 className="text-xs uppercase tracking-widest font-bold text-slate-500 mb-2">{section.label}</h4>
+                        <div className="bg-[#11141d] border border-white/5 rounded-lg p-4 text-slate-300 text-sm leading-relaxed">
+                            {section.value}
+                        </div>
+                    </div>
+                ))}
+
+                {/* Related Items */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                    {[
+                        { label: 'RELATED BASICS', items: selectedExercise.linkedBasics },
+                        { label: 'RELATED PRINCIPLES', items: selectedExercise.linkedPrinciples },
+                        { label: 'RELATED TACTICS', items: selectedExercise.linkedTactics },
+                    ].map(section => (
+                        <div key={section.label}>
+                            <h4 className="text-xs uppercase tracking-widest font-bold text-slate-500 mb-2">{section.label}</h4>
+                            <div className="flex flex-wrap gap-2">
+                                {section.items.length > 0 ? section.items.map(item => (
+                                    <span key={item} className="px-3 py-1.5 bg-[#151922] border border-slate-700 text-slate-300 text-xs rounded hover:border-slate-500 transition-colors cursor-default">
+                                        {item}
+                                    </span>
+                                )) : <span className="text-xs text-slate-600 italic">None selected</span>}
+                            </div>
+                        </div>
+                    ))}
                 </div>
-                <div>
-                  <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Goalkeepers</h4>
-                  <p className="text-gray-900 dark:text-gray-100">{selectedExercise.goalkeepers}</p>
-                </div>
-              </div>
 
-              <div>
-                <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Description</h4>
-                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{selectedExercise.description}</p>
-              </div>
+                {selectedExercise.equipment.length > 0 && (
+                    <div className="pt-2">
+                        <h4 className="text-xs uppercase tracking-widest font-bold text-slate-500 mb-2">EQUIPMENT</h4>
+                        <div className="flex flex-wrap gap-2">
+                            {selectedExercise.equipment.map(e => (
+                                <span key={e} className="px-3 py-1.5 bg-[#151922] border border-slate-700 text-slate-400 text-xs rounded">
+                                    {e}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
-              <div>
-                <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Equipment</h4>
-                <div className="flex flex-wrap gap-2">
-                  {selectedExercise.equipment.map((item, idx) => (
-                    <span key={idx} className="px-3 py-1 bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded text-sm">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Setup</h4>
-                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{selectedExercise.setup}</p>
-              </div>
-
-              <div>
-                <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Variations</h4>
-                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{selectedExercise.variations}</p>
-              </div>
-
-              <div>
-                <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Coaching Points</h4>
-                <p className="text-gray-900 dark:text-gray-100 leading-relaxed">{selectedExercise.coachingPoints}</p>
-              </div>
-
-              {selectedExercise.mediaUrl && (
-                <div>
-                  <h4 className="text-sm text-gray-500 dark:text-gray-400 mb-2">Media</h4>
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                    <img src={selectedExercise.mediaUrl} alt="Exercise media" className="w-full h-64 object-cover" />
-                  </div>
-                </div>
-              )}
+                {selectedExercise.mediaUrl && (
+                    <div className="pt-2">
+                        <h4 className="text-xs uppercase tracking-widest font-bold text-slate-500 mb-2">MEDIA</h4>
+                        <img src={selectedExercise.mediaUrl} alt="Exercise Media" className="rounded-lg max-h-64 object-cover border border-slate-700" />
+                    </div>
+                )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Create/Edit Modal */}
-      {(showCreateModal || isEditing) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-8">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl text-gray-900 dark:text-gray-100">
-                {isEditing ? 'Edit Exercise' : 'Create New Exercise'}
-              </h2>
-              <button
-                onClick={() => {
-                  if (isEditing) {
-                    setIsEditing(false);
-                    setMediaPreview(null);
-                  } else {
-                    resetForm();
-                  }
-                }}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 dark:text-gray-300" />
-              </button>
+      {/* CREATE / EDIT FORM MODAL */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={closeModal}>
+          <div className="bg-[#1e2330] rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 text-white border border-slate-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+                <h2 className="text-xl font-bold">{isEditing ? 'Edit Exercise' : 'Create New Exercise'}</h2>
+                <button onClick={closeModal} className="text-slate-400 hover:text-white"><X size={20} /></button>
             </div>
 
-            <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); isEditing ? handleEditExercise() : handleCreateExercise(); }}>
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Exercise Name *</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Rondo 4v2"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Equipment</label>
-                <div className="flex flex-wrap gap-2">
-                  {equipmentOptions.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => toggleEquipment(item)}
-                      className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                        formData.equipment?.includes(item)
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-5">
                 <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Intensity *</label>
-                  <select
-                    value={formData.intensity}
-                    onChange={(e) => setFormData({ ...formData, intensity: e.target.value as 'Low' | 'Medium' | 'High' })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                  </select>
+                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Name *</label>
+                    <input className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none transition-colors"
+                        value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. Rondo 4v2" />
                 </div>
 
-                <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Goalkeepers</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.goalkeepers}
-                    onChange={(e) => setFormData({ ...formData, goalkeepers: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Description *</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Describe the exercise..."
-                  rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Setup</label>
-                <textarea
-                  value={formData.setup}
-                  onChange={(e) => setFormData({ ...formData, setup: e.target.value })}
-                  placeholder="How to set up the exercise..."
-                  rows={2}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Variations</label>
-                <textarea
-                  value={formData.variations}
-                  onChange={(e) => setFormData({ ...formData, variations: e.target.value })}
-                  placeholder="Different ways to run the exercise..."
-                  rows={2}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Coaching Points</label>
-                <textarea
-                  value={formData.coachingPoints}
-                  onChange={(e) => setFormData({ ...formData, coachingPoints: e.target.value })}
-                  placeholder="Key points to emphasize..."
-                  rows={2}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">
-                  Related Basics (Optional) {formData.linkedBasics && formData.linkedBasics.length > 0 && (
-                    <span className="text-blue-600 dark:text-blue-400">({formData.linkedBasics.length} selected)</span>
-                  )}
-                </label>
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900">
-                  <div className="p-2 border-b border-gray-300 dark:border-gray-600">
-                    <div className="relative">
-                      <Search className="w-3 h-3 text-gray-400 dark:text-gray-500 absolute left-2 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={basicsSearch}
-                        onChange={(e) => setBasicsSearch(e.target.value)}
-                        placeholder="Search basics..."
-                        className="w-full pl-7 pr-2 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Intensity</label>
+                        <select className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none transition-colors"
+                            value={formData.intensity} onChange={e => setFormData({...formData, intensity: e.target.value as any})}>
+                            <option>Low</option><option>Medium</option><option>High</option>
+                        </select>
                     </div>
-                  </div>
-                  <div className="p-3 max-h-40 overflow-y-auto">
-                    {availableBasics
-                      .filter(basic => basic.name.toLowerCase().includes(basicsSearch.toLowerCase()))
-                      .map((basic) => (
-                        <label key={basic.id} className="flex items-center gap-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 rounded cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={formData.linkedBasics?.includes(basic.id) || false}
-                            onChange={(e) => {
-                              const current = formData.linkedBasics || [];
-                              if (e.target.checked) {
-                                setFormData({ ...formData, linkedBasics: [...current, basic.id] });
-                              } else {
-                                setFormData({ ...formData, linkedBasics: current.filter(id => id !== basic.id) });
-                              }
-                            }}
-                            className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-900 dark:text-gray-100">{basic.name}</span>
-                        </label>
-                      ))}
-                    {availableBasics.filter(basic => basic.name.toLowerCase().includes(basicsSearch.toLowerCase())).length === 0 && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">No basics found</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">
-                  Related Principles (Optional) {formData.linkedPrinciples && formData.linkedPrinciples.length > 0 && (
-                    <span className="text-blue-600 dark:text-blue-400">({formData.linkedPrinciples.length} selected)</span>
-                  )}
-                </label>
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900">
-                  <div className="p-2 border-b border-gray-300 dark:border-gray-600">
-                    <div className="relative">
-                      <Search className="w-3 h-3 text-gray-400 dark:text-gray-500 absolute left-2 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={principlesSearch}
-                        onChange={(e) => setPrinciplesSearch(e.target.value)}
-                        placeholder="Search principles..."
-                        className="w-full pl-7 pr-2 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">Goalkeepers</label>
+                        <input type="number" className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none transition-colors"
+                            value={formData.goalkeepers} onChange={e => setFormData({...formData, goalkeepers: parseInt(e.target.value) || 0})} />
                     </div>
-                  </div>
-                  <div className="p-3 max-h-40 overflow-y-auto">
-                    {availablePrinciples
-                      .filter(principle => principle.name.toLowerCase().includes(principlesSearch.toLowerCase()))
-                      .map((principle) => (
-                        <label key={principle.id} className="flex items-center gap-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 rounded cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={formData.linkedPrinciples?.includes(principle.id) || false}
-                            onChange={(e) => {
-                              const current = formData.linkedPrinciples || [];
-                              if (e.target.checked) {
-                                setFormData({ ...formData, linkedPrinciples: [...current, principle.id] });
-                              } else {
-                                setFormData({ ...formData, linkedPrinciples: current.filter(id => id !== principle.id) });
-                              }
-                            }}
-                            className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-900 dark:text-gray-100">{principle.name}</span>
-                        </label>
-                      ))}
-                    {availablePrinciples.filter(principle => principle.name.toLowerCase().includes(principlesSearch.toLowerCase())).length === 0 && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">No principles found</p>
-                    )}
-                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">
-                  Related Tactics (Optional) {formData.linkedBasics?.filter(id => availableTactics.some(t => t.id === id)).length > 0 && (
-                    <span className="text-blue-600 dark:text-blue-400">({formData.linkedBasics?.filter(id => availableTactics.some(t => t.id === id)).length} selected)</span>
-                  )}
-                </label>
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900">
-                  <div className="p-2 border-b border-gray-300 dark:border-gray-600">
-                    <div className="relative">
-                      <Search className="w-3 h-3 text-gray-400 dark:text-gray-500 absolute left-2 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={tacticsSearch}
-                        onChange={(e) => setTacticsSearch(e.target.value)}
-                        placeholder="Search tactics..."
-                        className="w-full pl-7 pr-2 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
+                {['Description', 'Setup', 'Variations', 'Coaching Points'].map(field => (
+                    <div key={field}>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">{field} {field === 'Description' && '*'}</label>
+                        <textarea className="w-full bg-[#151922] border border-slate-700 rounded-lg p-3 text-sm focus:border-blue-500 outline-none resize-none h-24 transition-colors"
+                            value={(formData as any)[field === 'Coaching Points' ? 'coachingPoints' : field.toLowerCase()]}
+                            onChange={e => setFormData({...formData, [field === 'Coaching Points' ? 'coachingPoints' : field.toLowerCase()]: e.target.value})}
+                        />
                     </div>
-                  </div>
-                  <div className="p-3 max-h-40 overflow-y-auto">
-                    {availableTactics
-                      .filter(tactic => tactic.name.toLowerCase().includes(tacticsSearch.toLowerCase()))
-                      .map((tactic) => (
-                        <label key={tactic.id} className="flex items-center gap-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 rounded cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={(formData.linkedBasics?.includes(tactic.id) || false)}
-                            onChange={(e) => {
-                              const current = formData.linkedBasics || [];
-                              if (e.target.checked) {
-                                setFormData({ ...formData, linkedBasics: [...current, tactic.id] });
-                              } else {
-                                setFormData({ ...formData, linkedBasics: current.filter(id => id !== tactic.id) });
-                              }
-                            }}
-                            className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-900 dark:text-gray-100">{tactic.name}</span>
+                ))}
+
+                <div className="pt-2">
+                    <label className="block text-xs font-medium text-slate-400 mb-2 uppercase">Equipment</label>
+                    <div className="flex flex-wrap gap-2">
+                        {equipmentOptions.map(item => (
+                            <button key={item} type="button" onClick={() => toggleSelection('equipment', item)}
+                                className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                                    formData.equipment.includes(item) 
+                                    ? 'bg-blue-600 border-blue-500 text-white' 
+                                    : 'bg-[#151922] border-slate-700 text-slate-400 hover:border-slate-500'
+                                }`}>
+                                {item}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Related Items Selection */}
+                <div className="space-y-4 pt-2">
+                    {[
+                        { label: 'Related Basics', list: allBasics, field: 'linkedBasics' as const, search: basicsSearch, setSearch: setBasicsSearch },
+                        { label: 'Related Principles', list: allPrinciples, field: 'linkedPrinciples' as const, search: principlesSearch, setSearch: setPrinciplesSearch },
+                        { label: 'Related Tactics', list: allTactics, field: 'linkedTactics' as const, search: tacticsSearch, setSearch: setTacticsSearch },
+                    ].map(section => (
+                        <div key={section.label}>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase">{section.label}</label>
+                            <div className="bg-[#151922] border border-slate-700 rounded-lg p-3">
+                                <div className="flex items-center gap-2 mb-2 border-b border-slate-700 pb-2">
+                                    <Search size={14} className="text-slate-500"/>
+                                    <input className="bg-transparent outline-none text-sm w-full text-slate-300 placeholder-slate-600" 
+                                        placeholder="Search..." value={section.search} onChange={e => section.setSearch(e.target.value)} />
+                                </div>
+                                <div className="max-h-24 overflow-y-auto space-y-1 custom-scrollbar">
+                                    {section.list.filter(item => item.name.toLowerCase().includes(section.search.toLowerCase())).map(item => (
+                                        <label key={item.id} className="flex items-center gap-3 cursor-pointer hover:bg-slate-800 p-2 rounded transition-colors group">
+                                            <div className={`w-4 h-4 border rounded flex items-center justify-center transition-all ${
+                                                formData[section.field].includes(item.name) ? 'bg-blue-600 border-blue-600' : 'border-slate-600 group-hover:border-slate-500'
+                                            }`}>
+                                                {formData[section.field].includes(item.name) && <Check size={12} />}
+                                            </div>
+                                            <span className="text-sm text-slate-300">{item.name}</span>
+                                            <input type="checkbox" className="hidden" 
+                                                checked={formData[section.field].includes(item.name)} 
+                                                onChange={() => toggleSelection(section.field, item.name)} 
+                                            />
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="pt-2">
+                    <label className="block text-xs font-medium text-slate-400 mb-2 uppercase">Media</label>
+                    <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 px-4 py-2 bg-[#151922] border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800 cursor-pointer transition-colors">
+                            <Upload size={16} /> Upload
+                            <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
                         </label>
-                      ))}
-                    {availableTactics.filter(tactic => tactic.name.toLowerCase().includes(tacticsSearch.toLowerCase())).length === 0 && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">No tactics found</p>
-                    )}
-                  </div>
+                        {mediaPreview && <span className="text-xs text-green-400 flex items-center gap-1"><Image as ImageIcon size={12}/> Selected</span>}
+                    </div>
                 </div>
-              </div>
+            </div>
 
-              <div>
-                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">Media (Optional)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    accept="image/*,video/*,.pdf"
-                    onChange={handleMediaUpload}
-                    className="hidden"
-                    id="media-upload"
-                  />
-                  <label
-                    htmlFor="media-upload"
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Upload File
-                  </label>
-                  {mediaPreview && (
-                    <button
-                      type="button"
-                      onClick={() => setMediaPreview(null)}
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                {mediaPreview && (
-                  <div className="mt-3 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                    <img src={mediaPreview} alt="Preview" className="w-full h-48 object-cover" />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isEditing) {
-                      setIsEditing(false);
-                      setMediaPreview(null);
-                    } else {
-                      resetForm();
-                    }
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Cancel
+            <div className="flex gap-3 mt-8 border-t border-slate-700 pt-4">
+                <button onClick={closeModal} className="flex-1 py-2.5 border border-slate-600 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors">Cancel</button>
+                <button onClick={handleSave} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-lg">
+                    {isEditing ? 'Update Exercise' : 'Create Exercise'}
                 </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  {isEditing ? 'Update Exercise' : 'Create Exercise'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
